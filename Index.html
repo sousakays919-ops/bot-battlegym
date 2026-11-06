@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bot Battle EGC</title>
+<style>
+:root{--bg:#0b0d12;--card:#161a23;--txt:#f2f5fa;--mut:#8a93a6;--acc:#27e08a;--bad:#ff4d5e;--you:#3aa0ff}
+*{box-sizing:border-box;margin:0;font-family:system-ui,Arial,sans-serif}
+body{background:var(--bg);color:var(--txt);min-height:100vh;padding:16px;padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
+h1{font-size:26px;text-align:center;letter-spacing:1px}
+h1 span{color:var(--acc)}
+.sub{text-align:center;color:var(--mut);margin:4px 0 16px;font-size:14px}
+.hide{display:none!important}
+.bot{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:14px;padding:14px;margin-bottom:10px;border:2px solid transparent;width:100%;color:var(--txt);text-align:left;font-size:16px}
+.bot .ic{font-size:30px}
+.bot b{display:block;font-size:18px}
+.bot small{color:var(--mut)}
+.bot.lock{opacity:.4}
+.bot.won{border-color:var(--acc)}
+button.main{background:var(--acc);color:#04130b;border:0;border-radius:12px;padding:14px;font-size:17px;font-weight:700;width:100%;margin-top:8px}
+button.sec{background:var(--card);color:var(--txt);border:1px solid #2a3040;border-radius:12px;padding:12px;font-size:15px;width:100%;margin-top:8px}
+.cam{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.vs{display:flex;gap:10px;margin:12px 0}
+.box{flex:1;background:var(--card);border-radius:14px;padding:12px;text-align:center}
+.box .n{font-size:44px;font-weight:800;line-height:1}
+.box .l{color:var(--mut);font-size:13px;margin-top:4px}
+.you .n{color:var(--you)}.bt .n{color:var(--bad)}
+.bar{height:10px;background:#222836;border-radius:6px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;transition:width .3s}
+.you .bar i{background:var(--you)}.bt .bar i{background:var(--bad)}
+#msg{text-align:center;font-weight:700;min-height:24px;margin:6px 0}
+#end{text-align:center;padding:30px 10px}
+#end .big{font-size:64px}
+#end h2{font-size:28px;margin:8px 0}
+#status{color:var(--mut);font-size:13px;text-align:center;margin-top:6px}
+</style>
+</head>
+<body>
+
+<!-- MENU -->
+<div id="menu">
+  <h1>BOT BATTLE <span>EGC</span></h1>
+  <p class="sub">Faça flexões na frente do celular e vença os bots</p>
+  <div id="list"></div>
+  <button class="sec" id="reset">Zerar progresso</button>
+</div>
+
+<!-- BATALHA -->
+<div id="game" class="hide">
+  <h1>BOT BATTLE <span>EGC</span></h1>
+  <div class="cam">
+    <video id="vid" playsinline muted></video>
+    <canvas id="cv"></canvas>
+  </div>
+  <div id="status">Carregando câmera…</div>
+  <div class="vs">
+    <div class="box you"><div class="l">VOCÊ</div><div class="n" id="me">0</div><div class="bar"><i id="mebar"></i></div></div>
+    <div class="box bt"><div class="l" id="botname">BOT</div><div class="n" id="bo">0</div><div class="bar"><i id="bobar"></i></div></div>
+  </div>
+  <div id="msg"></div>
+  <button class="main" id="start">Começar luta</button>
+  <button class="sec" id="quit">Desistir / voltar</button>
+</div>
+
+<!-- FIM -->
+<div id="end" class="hide">
+  <div class="big" id="eicon"></div>
+  <h2 id="etitle"></h2>
+  <p id="etext" class="sub"></p>
+  <button class="main" id="again">Lutar de novo</button>
+  <button class="sec" id="home">Menu</button>
+</div>
+
+<script type="module">
+import {PoseLandmarker, FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const BOTS=[
+ {id:"noob",name:"Noob",icon:"🐣",every:4,max:10},
+ {id:"ini",name:"Iniciante",icon:"🥉",every:2,max:28},
+ {id:"pro",name:"Pro",icon:"🥈",every:2,max:68},
+ {id:"hacker",name:"Hacker",icon:"💻",every:2,max:121},
+ {id:"deus",name:"Deus",icon:"⚡",every:1,max:189}
+];
+const $=id=>document.getElementById(id);
+let wins={};
+try{wins=JSON.parse(localStorage.getItem("egc_wins")||"{}")}catch(e){}
+const save=()=>{try{localStorage.setItem("egc_wins",JSON.stringify(wins))}catch(e){}};
+
+// ---------- menu ----------
+function renderMenu(){
+  $("list").innerHTML="";
+  BOTS.forEach((b,i)=>{
+    const unlocked=i===0||wins[BOTS[i-1].id];
+    const el=document.createElement("button");
+    el.className="bot"+(unlocked?"":" lock")+(wins[b.id]?" won":"");
+    el.innerHTML=`<span class="ic">${wins[b.id]?"🏆":unlocked?b.icon:"🔒"}</span><span><b>${b.name}</b><small>1 flexão a cada ${b.every}s · aguenta até ${b.max}</small></span>`;
+    if(unlocked) el.onclick=()=>openGame(b);
+    $("list").appendChild(el);
+  });
+}
+$("reset").onclick=()=>{if(confirm("Zerar todo o progresso?")){wins={};save();renderMenu();}};
+
+// ---------- som ----------
+let ac;
+function beep(f=600,d=.08){
+  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+  const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=f;g.gain.value=.15;
+  o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d);}catch(e){}
+}
+
+// ---------- câmera + pose ----------
+let landmarker=null,stream=null,camOn=false,rafId=0,lastVT=-1;
+const vid=$("vid"),cv=$("cv"),ctx=cv.getContext("2d");
+
+async function startCam(){
+  if(camOn)return;
+  try{
+    $("status").textContent="Abrindo câmera…";
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:640,height:480},audio:false});
+    vid.srcObject=stream;await vid.play();camOn=true;
+    if(!landmarker){
+      $("status").textContent="Carregando detector de pose…";
+      const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+      landmarker=await PoseLandmarker.createFromOptions(fs,{
+        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",delegate:"GPU"},
+        runningMode:"VIDEO",numPoses:1});
+    }
+    $("status").textContent="Câmera pronta. Deite de lado para a câmera, corpo inteiro visível.";
+    loop();
+  }catch(e){
+    $("status").textContent="Sem câmera ("+(e.message||e)+"). Permita a câmera para jogar.";
+  }
+}
+function stopCam(){
+  cancelAnimationFrame(rafId);
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+  camOn=false;
+}
+
+function angle(a,b,c){
+  const v1={x:a.x-b.x,y:a.y-b.y},v2={x:c.x-b.x,y:c.y-b.y};
+  const d=v1.x*v2.x+v1.y*v2.y,m=Math.hypot(v1.x,v1.y)*Math.hypot(v2.x,v2.y);
+  return Math.acos(Math.max(-1,Math.min(1,d/(m||1))))*180/Math.PI;
+}
+let smooth=null,phase="up";
+function loop(){
+  rafId=requestAnimationFrame(loop);
+  if(!landmarker||vid.readyState<2||vid.currentTime===lastVT)return;
+  lastVT=vid.currentTime;
+  const res=landmarker.detectForVideo(vid,performance.now());
+  cv.width=vid.videoWidth;cv.height=vid.videoHeight;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const L=res.landmarks&&res.landmarks[0];
+  if(!L)return;
+  // escolhe o braço mais visível
+  const vis=a=>(L[a[0]].visibility+L[a[1]].visibility+L[a[2]].visibility);
+  const left=[11,13,15],right=[12,14,16];
+  const arm=vis(left)>=vis(right)?left:right;
+  const [s,e,w]=arm.map(i=>L[i]);
+  ctx.strokeStyle="#27e08a";ctx.lineWidth=5;ctx.fillStyle="#27e08a";
+  ctx.beginPath();ctx.moveTo(s.x*cv.width,s.y*cv.height);ctx.lineTo(e.x*cv.width,e.y*cv.height);ctx.lineTo(w.x*cv.width,w.y*cv.height);ctx.stroke();
+  [s,e,w].forEach(p=>{ctx.beginPath();ctx.arc(p.x*cv.width,p.y*cv.height,7,0,7);ctx.fill()});
+  const ang=angle(s,e,w);
+  smooth=smooth===null?ang:smooth*.6+ang*.4;
+  if(!running)return;
+  if(smooth<95&&phase==="up")phase="down";
+  else if(smooth>150&&phase==="down"){phase="up";addRep();}
+}
+
+// ---------- batalha ----------
+let bot=null,me=0,bo=0,running=false,botTimer=null,lastRep=0,botDone=false,idleTimer=null;
+
+function openGame(b){
+  bot=b;$("menu").classList.add("hide");$("end").classList.add("hide");$("game").classList.remove("hide");
+  $("botname").textContent=b.icon+" "+b.name.toUpperCase();
+  reset();startCam();
+}
+function reset(){
+  running=false;clearInterval(botTimer);clearInterval(idleTimer);
+  me=0;bo=0;botDone=false;phase="up";smooth=null;
+  upd();$("msg").textContent="";$("start").classList.remove("hide");
+}
+function upd(){
+  $("me").textContent=me;$("bo").textContent=bo;
+  $("mebar").style.width=Math.min(100,me/(bot.max+1)*100)+"%";
+  $("bobar").style.width=(bo/bot.max*100)+"%";
+}
+$("start").onclick=()=>{
+  reset();let c=3;$("start").classList.add("hide");
+  $("msg").textContent="Prepare-se… 3";beep(400,.2);
+  const t=setInterval(()=>{
+    c--;
+    if(c>0){$("msg").textContent="Prepare-se… "+c;beep(400,.2)}
+    else{clearInterval(t);go();}
+  },1000);
+};
+function go(){
+  running=true;lastRep=Date.now();beep(900,.3);
+  $("msg").textContent="VALEU! Desça e suba!";
+  botTimer=setInterval(()=>{
+    if(!running)return;
+    if(bo<bot.max){bo++;upd();}
+    if(bo>=bot.max&&!botDone){
+      botDone=true;clearInterval(botTimer);
+      $("msg").textContent=bot.name+" cansou! Faça "+(bot.max+1)+" para vencer!";
+      beep(300,.3);lastRep=Date.now();
+    }
+  },bot.every*1000);
+  // depois que o bot cansa, 10s sem flexão = derrota
+  idleTimer=setInterval(()=>{
+    if(running&&botDone&&Date.now()-lastRep>10000)finish(false);
+  },500);
+}
+function addRep(){
+  if(!running)return;
+  me++;lastRep=Date.now();beep(700,.06);upd();
+  if(me>bot.max)finish(true);
+}
+function finish(win){
+  running=false;clearInterval(botTimer);clearInterval(idleTimer);
+  $("game").classList.add("hide");$("end").classList.remove("hide");
+  if(win){
+    wins[bot.id]=true;save();
+    $("eicon").textContent="🏆";$("etitle").textContent="VOCÊ VENCEU!";
+    $("etext").textContent=`${me} flexões contra ${bot.name} (${bot.max}).`+(BOTS[BOTS.indexOf(bot)+1]?" Próximo bot liberado!":" Você zerou o jogo!");
+    beep(1000,.4);
+  }else{
+    $("eicon").textContent="💀";$("etitle").textContent="VOCÊ PERDEU";
+    $("etext").textContent=`${bot.name} aguentou ${bot.max} e você fez ${me}. Tente de novo!`;
+    beep(200,.5);
+  }
+}
+$("again").onclick=()=>openGame(bot);
+$("home").onclick=()=>{stopCam();$("end").classList.add("hide");$("menu").classList.remove("hide");renderMenu();};
+$("quit").onclick=()=>{reset();stopCam();$("game").classList.add("hide");$("menu").classList.remove("hide");renderMenu();};
+
+renderMenu();
+</script>
+</body>
+</html>
